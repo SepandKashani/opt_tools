@@ -11,3 +11,4 @@ opt_tools.function
       Function
       ProximableFunction
       DifferentiableFunction
+      Loss_L2

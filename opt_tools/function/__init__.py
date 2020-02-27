@@ -6,6 +6,9 @@
 
 import abc
 
+import numpy as np
+import numpy.linalg as linalg
+
 
 class Function(abc.ABC):
     r"""
@@ -140,3 +143,84 @@ class DifferentiableFunction(Function):
             Lipschitz constant.
         """
         raise NotImplementedError
+
+
+class Loss_L2(DifferentiableFunction, ProximableFunction):
+    r"""
+    :math:`f(x) = \|y - A x\|_{F}^{2}`
+
+    With:
+
+    * :math:`x \in \mathbb{C}^{\texttt{sh}_{I}}`;
+
+    * :math:`y \in \mathbb{C}^{\texttt{sh}_{O}}`;
+
+    * :math:`A \in \mathbb{C}^{\texttt{sh}_{O} \times \texttt{sh}_{I}}`;
+
+    * :math:`\|z\|_{F}^{2} = \|\vecop(z)\|_{2}^{2}`.
+
+    Notes
+    -----
+    * This implementation assumes :math:`A` is dense, so computations take place
+      internally via 2D arrays.
+    * :py:meth:`~opt_tools.function.Loss_L2.prox` and
+      :py:meth:`~opt_tools.function.Loss_L2.g_lipschitz` are computed via
+      :math:`\texttt{SVD}(A)`.
+    """
+
+    def __init__(self, A, y):
+        r"""
+        Parameters
+        ----------
+        A : :py:class:`~numpy.ndarray`
+            (\*sh_O, \*sh_I) array (real/complex)
+        y : :py:class:`~numpy.ndarray`
+            (\*sh_O,) array (real/complex)
+        """
+        self._sh_O = A.shape[:y.ndim]
+        self._sh_I = A.shape[y.ndim:]
+        self._y = np.reshape(y, (np.prod(self._sh_O),))
+        self._A = np.reshape(A, (np.prod(self._sh_O), np.prod(self._sh_I)))
+        self._AH = self._A.T.conj()
+
+        # Some precomputations for speed
+        self._S = None
+        self._V = None
+        self._VH = None
+        self._glipschitz = None
+
+    def __call__(self, x):
+        y = linalg.norm(self._y - self._A @ x.reshape(-1)) ** 2
+        return y
+
+    def grad(self, x):
+        y = self._AH @ (self._A @ x.reshape(-1) - self._y)
+        return y.reshape(self._sh_I)
+
+    @property
+    def g_lipschitz(self):
+        if self._glipschitz is None:
+            # The lower bound for `L` is \sigma_{\max}^{2}(A)
+            _, self._S, self._VH = linalg.svd(self._A, full_matrices=False)
+            self._V = self._VH.T.conj()
+            self._glipschitz = np.amax(self._S) ** 2
+
+        L = self._glipschitz
+        return L
+
+    def prox(self, x, lambda_=1):
+        # \prox_{\lambda f}(x) = (I + 2 \lambda A^{H}A)^{-1} (2 \lambda A^{H} y + x)
+        #                      = V [I + 2 \lambda S^{H} S]^{-1} V^{H} (2 \lambda A^{H} y + x)
+        if np.isclose(lambda_, 0):
+            y = x
+        else:
+            if self._S is None:
+                _, self._S, self._VH = linalg.svd(self._A, full_matrices=False)
+                self._V = self._VH.T.conj()
+
+            a = (self._AH @ self._y) + (x.reshape(-1) / (2 * lambda_))
+            b = (self._S ** 2) + (1 / (2 * lambda_))
+
+            y = np.reshape((self._V / b) @ (self._VH @ a), self._sh_I)
+
+        return y
