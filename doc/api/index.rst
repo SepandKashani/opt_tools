@@ -10,3 +10,6 @@ API Reference
 
 .. autosummary::
    :toctree:
+
+   opt_tools
+   opt_tools.function
