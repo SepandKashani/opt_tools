@@ -13,5 +13,5 @@ API Reference
 
    opt_tools
    opt_tools.function
+   opt_tools.solver
    opt_tools.util
-   
